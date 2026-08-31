@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+dist-stress/
+stress-tests/results/
+stress-tests/auth-otp/.otp-capture.jsonl
+stress-tests/auth-otp/.run-metadata.json
+# Keep environment variables out of version control
+.env
+
+/src/generated/prisma

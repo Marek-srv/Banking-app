@@ -1,0 +1,669 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum CustomerStatus {
+  PENDING_ADMIN_APPROVAL
+  ACTIVE
+  REJECTED
+  BLOCKED
+  INACTIVE
+  SUSPENDED
+
+  @@map("customer_status_v1")
+}
+
+enum KycStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+
+  @@map("kyc_status_v1")
+}
+
+enum AccountType {
+  SAVINGS
+  CURRENT
+  LOAN
+
+  @@map("account_type_v1")
+}
+
+enum RequestStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+
+  @@map("request_status")
+}
+
+enum RequestType {
+  ACCOUNT_OPENING
+  ACCOUNT_CLOSURE
+  TRANSFER_LIMIT
+  LOAN
+  CARD
+
+  @@map("request_type")
+}
+
+enum LoanStatus {
+  APPROVED
+  ACTIVE
+  OVERDUE
+  CLOSED
+  FORECLOSED
+  CANCELLED
+
+  @@map("loan_status")
+}
+
+enum EmiStatus {
+  PENDING
+  PAID
+  OVERDUE
+  PARTIALLY_PAID
+  CANCELLED
+
+  @@map("emi_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model accounts {
+  account_id                                                 BigInt                     @id @default(autoincrement())
+  account_number                                             String                     @unique @db.VarChar(20)
+  customer_id                                                BigInt
+  branch_id                                                  BigInt
+  account_type                                               AccountType
+  account_subtype                                            String?                    @db.VarChar(50)
+  ifsc_code                                                  String?                    @db.VarChar(20)
+  currency                                                   String                     @default("INR") @db.Char(3)
+  current_balance                                            Decimal                    @default(0) @db.Decimal(19, 4)
+  available_balance                                          Decimal                    @default(0) @db.Decimal(19, 4)
+  account_status                                             String                     @default("ACTIVE") @db.VarChar(20)
+  per_transaction_limit                                      Decimal?                   @db.Decimal(19, 4)
+  daily_transfer_limit                                       Decimal?                   @db.Decimal(19, 4)
+  opened_at                                                  DateTime                   @db.Date
+  closed_at                                                  DateTime?                  @db.Date
+  closed_by                                                  BigInt?
+  close_reason                                               String?                    @db.VarChar(500)
+  frozen_at                                                  DateTime?                  @db.Timestamp(6)
+  frozen_by                                                  BigInt?
+  freeze_reason                                              String?                    @db.VarChar(500)
+  created_at                                                 DateTime                   @default(now()) @db.Timestamp(6)
+  updated_at                                                 DateTime                   @default(now()) @db.Timestamp(6)
+  branches                                                   branches                   @relation(fields: [branch_id], references: [branch_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_branch")
+  customers                                                  customers                  @relation(fields: [customer_id], references: [customer_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_customer")
+  users_accounts_closed_byTousers                            users?                     @relation("accounts_closed_byTousers", fields: [closed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_closed_by")
+  users_accounts_frozen_byTousers                            users?                     @relation("accounts_frozen_byTousers", fields: [frozen_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_frozen_by")
+  cards                                                      cards[]
+  card_requests                                              card_requests[]
+  ledger_entries                                             ledger_entries[]
+  account_requests                                           account_requests?
+  account_closure_requests                                   account_closure_requests[]
+  transfer_limit_requests                                    transfer_limit_requests[]
+  loans                                                      loans?
+  loans_auto_debit                                           loans[]                    @relation("loans_auto_debit_account")
+  transactions_transactions_destination_account_idToaccounts transactions[]             @relation("transactions_destination_account_idToaccounts")
+  transactions_transactions_source_account_idToaccounts      transactions[]             @relation("transactions_source_account_idToaccounts")
+
+  @@index([closed_by], map: "idx_account_closed_by")
+  @@index([frozen_by], map: "idx_account_frozen_by")
+}
+
+model atms {
+  atm_id                 BigInt   @id @default(autoincrement())
+  branch_id              BigInt
+  atm_code               String   @unique @db.VarChar(30)
+  location               String   @db.VarChar(255)
+  status                 String   @default("ACTIVE") @db.VarChar(20)
+  operating_hours        String?  @db.VarChar(100)
+  supported_transactions String?  @db.VarChar(255)
+  created_at             DateTime @default(now()) @db.Timestamp(6)
+  updated_at             DateTime @default(now()) @db.Timestamp(6)
+  branches               branches @relation(fields: [branch_id], references: [branch_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_atm_branch")
+}
+
+model beneficiaries {
+  beneficiary_id         BigInt    @id @default(autoincrement())
+  customer_id            BigInt
+  beneficiary_name       String    @db.VarChar(150)
+  beneficiary_account_no String    @db.VarChar(20)
+  bank_name              String?   @db.VarChar(150)
+  bank_code              String?   @db.VarChar(30)
+  nickname               String?   @db.VarChar(100)
+  status                 String    @default("ACTIVE") @db.VarChar(20)
+  created_at             DateTime  @default(now()) @db.Timestamp(6)
+  customers              customers @relation(fields: [customer_id], references: [customer_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_beneficiary_customer")
+}
+
+model branches {
+  branch_id                                BigInt             @id @default(autoincrement())
+  branch_code                              String             @unique @db.VarChar(20)
+  branch_name                              String             @db.VarChar(150)
+  address                                  String?            @db.VarChar(255)
+  city                                     String?            @db.VarChar(100)
+  state                                    String?            @db.VarChar(100)
+  country                                  String?            @default("India") @db.VarChar(100)
+  postal_code                              String?            @db.VarChar(20)
+  phone                                    String?            @db.VarChar(20)
+  email                                    String?            @unique @db.VarChar(255)
+  operating_hours                          String?            @db.VarChar(100)
+  status                                   String             @default("ACTIVE") @db.VarChar(20)
+  manager_id                               BigInt?
+  created_at                               DateTime           @default(now()) @db.Timestamp(6)
+  updated_at                               DateTime           @default(now()) @db.Timestamp(6)
+  accounts                                 accounts[]
+  account_requests_preferred               account_requests[] @relation("account_requests_preferred_branch")
+  account_requests_approved                account_requests[] @relation("account_requests_approved_branch")
+  atms                                     atms[]
+  employees_branches_manager_idToemployees employees?         @relation("branches_manager_idToemployees", fields: [manager_id], references: [employee_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_branch_manager")
+  customers                                customers[]
+  employees_employees_branch_idTobranches  employees[]        @relation("employees_branch_idTobranches")
+}
+
+model cards {
+  card_id            BigInt         @id @default(autoincrement())
+  account_id         BigInt
+  card_reference     String         @unique @db.VarChar(50)
+  masked_card_number String?        @db.VarChar(25)
+  card_type          String         @db.VarChar(30)
+  expiry_date        DateTime?      @db.Date
+  card_status        String         @default("ACTIVE") @db.VarChar(20)
+  freeze_source      String?        @db.VarChar(30)
+  created_at         DateTime       @default(now()) @db.Timestamp(6)
+  updated_at         DateTime       @default(now()) @db.Timestamp(6)
+  accounts           accounts       @relation(fields: [account_id], references: [account_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_card_account")
+  card_requests      card_requests?
+
+  @@index([account_id, freeze_source], map: "idx_card_account_freeze_source")
+}
+
+model customers {
+  customer_id                            BigInt                        @id @default(autoincrement())
+  user_id                                BigInt                        @unique
+  branch_id                              BigInt
+  customer_number                        String                        @unique @db.VarChar(30)
+  first_name                             String                        @db.VarChar(100)
+  last_name                              String                        @db.VarChar(100)
+  date_of_birth                          DateTime?                     @db.Date
+  gender                                 String?                       @db.VarChar(20)
+  phone                                  String?                       @db.VarChar(20)
+  email                                  String?                       @unique @db.VarChar(255)
+  address                                String?                       @db.VarChar(255)
+  city                                   String?                       @db.VarChar(100)
+  state                                  String?                       @db.VarChar(100)
+  country                                String?                       @default("India") @db.VarChar(100)
+  postal_code                            String?                       @db.VarChar(20)
+  kyc_status                             KycStatus                     @default(PENDING)
+  kyc_verified_at                        DateTime?                     @db.Timestamp(6)
+  kyc_verified_by                        BigInt?
+  kyc_rejected_at                        DateTime?                     @db.Timestamp(6)
+  kyc_rejected_by                        BigInt?
+  kyc_rejection_reason                   String?                       @db.VarChar(500)
+  customer_status                        CustomerStatus                @default(ACTIVE)
+  approved_at                            DateTime?                     @db.Timestamp(6)
+  approved_by                            BigInt?
+  rejected_at                            DateTime?                     @db.Timestamp(6)
+  rejected_by                            BigInt?
+  rejection_reason                       String?                       @db.VarChar(500)
+  blocked_at                             DateTime?                     @db.Timestamp(6)
+  blocked_by                             BigInt?
+  block_reason                           String?                       @db.VarChar(500)
+  created_at                             DateTime                      @default(now()) @db.Timestamp(6)
+  updated_at                             DateTime                      @default(now()) @db.Timestamp(6)
+  accounts                               accounts[]
+  beneficiaries                          beneficiaries[]
+  account_requests                       account_requests[]
+  account_closure_requests               account_closure_requests[]
+  transfer_limit_requests                transfer_limit_requests[]
+  loan_requests                          loan_requests[]
+  card_requests                          card_requests[]
+  loans                                  loans[]
+  kyc_status_history                     customer_kyc_status_history[]
+  branches                               branches                      @relation(fields: [branch_id], references: [branch_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_customer_branch")
+  users                                  users                         @relation("customers_user_idTousers", fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_customer_user")
+  users_customers_approved_byTousers     users?                        @relation("customers_approved_byTousers", fields: [approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_customer_approved_by")
+  users_customers_rejected_byTousers     users?                        @relation("customers_rejected_byTousers", fields: [rejected_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_customer_rejected_by")
+  users_customers_blocked_byTousers      users?                        @relation("customers_blocked_byTousers", fields: [blocked_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_customer_blocked_by")
+  users_customers_kyc_verified_byTousers users?                        @relation("customers_kyc_verified_byTousers", fields: [kyc_verified_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_customer_kyc_verified_by")
+  users_customers_kyc_rejected_byTousers users?                        @relation("customers_kyc_rejected_byTousers", fields: [kyc_rejected_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_customer_kyc_rejected_by")
+
+  @@index([customer_status], map: "idx_customer_status")
+  @@index([kyc_status], map: "idx_customer_kyc_status")
+}
+
+model employees {
+  employee_id                             BigInt     @id @default(autoincrement())
+  branch_id                               BigInt
+  employee_number                         String     @unique @db.VarChar(30)
+  first_name                              String     @db.VarChar(100)
+  last_name                               String     @db.VarChar(100)
+  position                                String?    @db.VarChar(100)
+  phone                                   String?    @db.VarChar(20)
+  email                                   String?    @unique @db.VarChar(255)
+  gender                                  String?    @db.VarChar(20)
+  hire_date                               DateTime?  @db.Date
+  qualification                           String?    @db.VarChar(150)
+  status                                  String     @default("ACTIVE") @db.VarChar(20)
+  created_at                              DateTime   @default(now()) @db.Timestamp(6)
+  updated_at                              DateTime   @default(now()) @db.Timestamp(6)
+  branches_branches_manager_idToemployees branches[] @relation("branches_manager_idToemployees")
+  branches_employees_branch_idTobranches  branches   @relation("employees_branch_idTobranches", fields: [branch_id], references: [branch_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_employee_branch")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ledger_entries {
+  ledger_entry_id BigInt       @id @default(autoincrement())
+  transaction_id  BigInt
+  account_id      BigInt
+  entry_type      String       @db.VarChar(10)
+  amount          Decimal      @db.Decimal(19, 4)
+  balance_before  Decimal      @db.Decimal(19, 4)
+  balance_after   Decimal      @db.Decimal(19, 4)
+  created_at      DateTime     @default(now()) @db.Timestamp(6)
+  accounts        accounts     @relation(fields: [account_id], references: [account_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_ledger_account")
+  transactions    transactions @relation(fields: [transaction_id], references: [transaction_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_ledger_transaction")
+}
+
+model transaction_details {
+  transaction_detail_id BigInt       @id @default(autoincrement())
+  transaction_id        BigInt
+  description           String?      @db.VarChar(255)
+  merchant_payee        String?      @db.VarChar(150)
+  transaction_category  String?      @db.VarChar(100)
+  notes                 String?
+  created_at            DateTime     @default(now()) @db.Timestamp(6)
+  transactions          transactions @relation(fields: [transaction_id], references: [transaction_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_transaction_detail")
+}
+
+model transaction_status_history {
+  status_history_id BigInt       @id @default(autoincrement())
+  transaction_id    BigInt
+  status            String       @db.VarChar(30)
+  description       String?      @db.VarChar(255)
+  created_at        DateTime     @default(now()) @db.Timestamp(6)
+  transactions      transactions @relation(fields: [transaction_id], references: [transaction_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_transaction_status")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model transactions {
+  transaction_id                                         BigInt                       @id @default(autoincrement())
+  reference_number                                       String                       @unique @db.VarChar(50)
+  transaction_type                                       String                       @db.VarChar(30)
+  source_account_id                                      BigInt?
+  destination_account_id                                 BigInt?
+  amount                                                 Decimal                      @db.Decimal(19, 4)
+  currency                                               String                       @default("INR") @db.Char(3)
+  status                                                 String                       @default("INITIATED") @db.VarChar(30)
+  initiated_at                                           DateTime                     @default(now()) @db.Timestamp(6)
+  completed_at                                           DateTime?                    @db.Timestamp(6)
+  created_at                                             DateTime                     @default(now()) @db.Timestamp(6)
+  reversal_of_transaction_id                             BigInt?                      @unique(map: "uq_transaction_reversal_of")
+  ledger_entries                                         ledger_entries[]
+  transaction_details                                    transaction_details[]
+  transaction_status_history                             transaction_status_history[]
+  accounts_transactions_destination_account_idToaccounts accounts?                    @relation("transactions_destination_account_idToaccounts", fields: [destination_account_id], references: [account_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_transaction_destination")
+  accounts_transactions_source_account_idToaccounts      accounts?                    @relation("transactions_source_account_idToaccounts", fields: [source_account_id], references: [account_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_transaction_source")
+  original_transaction                                   transactions?                @relation("TransactionReversal", fields: [reversal_of_transaction_id], references: [transaction_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_transaction_reversal_of")
+  reversal_transaction                                   transactions?                @relation("TransactionReversal")
+  idempotency_records                                    idempotency_records[]
+  loan_emi_schedules                                     loan_emi_schedules[]
+  loan_disbursement                                      loans?                       @relation("loan_disbursement_transaction")
+}
+
+model users {
+  user_id                           BigInt                        @id @default(autoincrement())
+  email                             String                        @unique @db.VarChar(255)
+  password_hash                     String                        @db.VarChar(255)
+  role                              String                        @default("CUSTOMER") @db.VarChar(30)
+  status                            String                        @default("ACTIVE") @db.VarChar(20)
+  email_verified                    Boolean                       @default(false)
+  email_verified_at                 DateTime?                     @db.Timestamp(6)
+  last_login_at                     DateTime?                     @db.Timestamp(6)
+  failed_login_attempts             Int                           @default(0)
+  locked_until                      DateTime?                     @db.Timestamp(6)
+  token_version                     Int                           @default(0)
+  created_at                        DateTime                      @default(now()) @db.Timestamp(6)
+  updated_at                        DateTime                      @default(now()) @db.Timestamp(6)
+  customers                         customers?                    @relation("customers_user_idTousers")
+  customers_approved                customers[]                   @relation("customers_approved_byTousers")
+  customers_rejected                customers[]                   @relation("customers_rejected_byTousers")
+  customers_blocked                 customers[]                   @relation("customers_blocked_byTousers")
+  customers_kyc_verified            customers[]                   @relation("customers_kyc_verified_byTousers")
+  customers_kyc_rejected            customers[]                   @relation("customers_kyc_rejected_byTousers")
+  accounts_closed                   accounts[]                    @relation("accounts_closed_byTousers")
+  accounts_frozen                   accounts[]                    @relation("accounts_frozen_byTousers")
+  account_requests_reviewed         account_requests[]            @relation("account_requests_reviewed_byTousers")
+  account_closure_requests_reviewed account_closure_requests[]    @relation("account_closure_requests_reviewed_byTousers")
+  transfer_limit_requests_reviewed  transfer_limit_requests[]     @relation("transfer_limit_requests_reviewed_byTousers")
+  loan_requests_reviewed            loan_requests[]               @relation("loan_requests_reviewed_byTousers")
+  card_requests_reviewed            card_requests[]               @relation("card_requests_reviewed_byTousers")
+  loans_approved                    loans[]                       @relation("loans_approved_byTousers")
+  loans_disbursed                   loans[]                       @relation("loans_disbursed_byTousers")
+  request_status_changes            request_status_history[]      @relation("request_status_history_changed_byTousers")
+  kyc_status_changes                customer_kyc_status_history[] @relation("customer_kyc_status_history_changed_byTousers")
+  audit_logs                        audit_logs[]
+  idempotency_records               idempotency_records[]
+  email_verification_otps           email_verification_otps[]
+  account_recovery_otps             account_recovery_otps[]
+}
+
+model email_verification_otps {
+  otp_id     BigInt    @id @default(autoincrement())
+  user_id    BigInt
+  otp_hash   String    @db.VarChar(255)
+  expires_at DateTime  @db.Timestamp(6)
+  attempts   Int       @default(0)
+  used_at    DateTime? @db.Timestamp(6)
+  created_at DateTime  @default(now()) @db.Timestamp(6)
+  users      users     @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_email_verification_otp_user")
+
+  @@index([user_id], map: "idx_email_verification_otp_user")
+  @@index([expires_at], map: "idx_email_verification_otp_expires")
+}
+
+model account_recovery_otps {
+  recovery_otp_id        BigInt    @id @default(autoincrement())
+  user_id                BigInt
+  purpose                String    @db.VarChar(30)
+  otp_hash               String    @db.VarChar(255)
+  expires_at             DateTime  @db.Timestamp(6)
+  attempts               Int       @default(0)
+  used_at                DateTime? @db.Timestamp(6)
+  reset_token_hash       String?   @db.Char(64)
+  reset_token_expires_at DateTime? @db.Timestamp(6)
+  reset_completed_at     DateTime? @db.Timestamp(6)
+  created_at             DateTime  @default(now()) @db.Timestamp(6)
+  users                  users     @relation(fields: [user_id], references: [user_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_account_recovery_otp_user")
+
+  @@index([user_id, purpose], map: "idx_account_recovery_otp_user_purpose")
+  @@index([expires_at], map: "idx_account_recovery_otp_expires")
+  @@index([reset_token_hash], map: "idx_account_recovery_reset_token")
+}
+
+model audit_logs {
+  audit_id   BigInt   @id @default(autoincrement())
+  user_id    BigInt
+  action     String   @db.VarChar(50)
+  entity     String   @db.VarChar(50)
+  entity_id  BigInt
+  ip_address String   @db.VarChar(45)
+  reason     String?  @db.VarChar(500)
+  metadata   Json?    @db.JsonB
+  created_at DateTime @default(now()) @db.Timestamp(6)
+  users      users    @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_audit_user")
+
+  @@index([user_id], map: "idx_audit_user")
+  @@index([action], map: "idx_audit_action")
+  @@index([created_at], map: "idx_audit_created_at")
+  @@index([entity, entity_id], map: "idx_audit_entity")
+}
+
+model idempotency_records {
+  idempotency_id  BigInt        @id @default(autoincrement())
+  user_id         BigInt
+  idempotency_key String        @db.VarChar(128)
+  operation       String        @db.VarChar(30)
+  request_hash    String        @db.Char(64)
+  status          String        @default("PROCESSING") @db.VarChar(20)
+  transaction_id  BigInt?
+  created_at      DateTime      @default(now()) @db.Timestamp(6)
+  updated_at      DateTime      @default(now()) @db.Timestamp(6)
+  users           users         @relation(fields: [user_id], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_idempotency_user")
+  transactions    transactions? @relation(fields: [transaction_id], references: [transaction_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_idempotency_transaction")
+
+  @@unique([user_id, idempotency_key], map: "uq_idempotency_user_key")
+  @@index([transaction_id], map: "idx_idempotency_transaction")
+  @@index([created_at], map: "idx_idempotency_created_at")
+}
+
+model pending_registrations {
+  pending_registration_id       BigInt    @id @default(autoincrement())
+  first_name                    String    @db.VarChar(100)
+  last_name                     String    @db.VarChar(100)
+  date_of_birth                 DateTime  @db.Date
+  mobile                        String    @db.VarChar(20)
+  email                         String    @unique @db.VarChar(255)
+  otp_hash                      String    @db.VarChar(255)
+  otp_expires_at                DateTime  @db.Timestamp(6)
+  otp_attempts                  Int       @default(0)
+  otp_used_at                   DateTime? @db.Timestamp(6)
+  email_verified_at             DateTime? @db.Timestamp(6)
+  registration_token_hash       String?   @unique @db.Char(64)
+  registration_token_expires_at DateTime? @db.Timestamp(6)
+  completed_at                  DateTime? @db.Timestamp(6)
+  created_at                    DateTime  @default(now()) @db.Timestamp(6)
+  updated_at                    DateTime  @default(now()) @db.Timestamp(6)
+
+  @@index([otp_expires_at], map: "idx_pending_registration_otp_expires")
+  @@index([registration_token_expires_at], map: "idx_pending_registration_token_expires")
+}
+
+model customer_kyc_status_history {
+  kyc_history_id  BigInt     @id @default(autoincrement())
+  customer_id     BigInt
+  previous_status KycStatus?
+  new_status      KycStatus
+  changed_by      BigInt?
+  reason          String?    @db.VarChar(500)
+  created_at      DateTime   @default(now()) @db.Timestamp(6)
+  customers       customers  @relation(fields: [customer_id], references: [customer_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_kyc_history_customer")
+  users           users?     @relation("customer_kyc_status_history_changed_byTousers", fields: [changed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_kyc_history_changed_by")
+
+  @@index([customer_id, created_at], map: "idx_kyc_history_customer_created")
+  @@index([new_status], map: "idx_kyc_history_status")
+}
+
+model account_requests {
+  account_request_id              BigInt        @id @default(autoincrement())
+  customer_id                     BigInt
+  account_type                    AccountType
+  account_subtype                 String?       @db.VarChar(50)
+  preferred_branch_id             BigInt?
+  purpose                         String?       @db.VarChar(500)
+  requested_per_transaction_limit Decimal?      @db.Decimal(19, 4)
+  requested_daily_transfer_limit  Decimal?      @db.Decimal(19, 4)
+  notes                           String?
+  status                          RequestStatus @default(PENDING)
+  reviewed_by                     BigInt?
+  reviewed_at                     DateTime?     @db.Timestamp(6)
+  admin_note                      String?
+  rejection_reason                String?       @db.VarChar(500)
+  approved_account_id             BigInt?       @unique
+  approved_branch_id              BigInt?
+  approved_per_transaction_limit  Decimal?      @db.Decimal(19, 4)
+  approved_daily_transfer_limit   Decimal?      @db.Decimal(19, 4)
+  created_at                      DateTime      @default(now()) @db.Timestamp(6)
+  updated_at                      DateTime      @default(now()) @updatedAt @db.Timestamp(6)
+  customers                       customers     @relation(fields: [customer_id], references: [customer_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_request_customer")
+  preferred_branch                branches?     @relation("account_requests_preferred_branch", fields: [preferred_branch_id], references: [branch_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_request_preferred_branch")
+  approved_branch                 branches?     @relation("account_requests_approved_branch", fields: [approved_branch_id], references: [branch_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_request_approved_branch")
+  reviewer                        users?        @relation("account_requests_reviewed_byTousers", fields: [reviewed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_request_reviewed_by")
+  approved_account                accounts?     @relation(fields: [approved_account_id], references: [account_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_request_approved_account")
+
+  @@index([customer_id], map: "idx_account_request_customer")
+  @@index([customer_id, status], map: "idx_account_request_customer_status")
+  @@index([status, created_at], map: "idx_account_request_status_created")
+}
+
+model account_closure_requests {
+  account_closure_request_id BigInt        @id @default(autoincrement())
+  customer_id                BigInt
+  account_id                 BigInt
+  reason                     String        @db.VarChar(500)
+  status                     RequestStatus @default(PENDING)
+  reviewed_by                BigInt?
+  reviewed_at                DateTime?     @db.Timestamp(6)
+  rejection_reason           String?       @db.VarChar(500)
+  created_at                 DateTime      @default(now()) @db.Timestamp(6)
+  updated_at                 DateTime      @default(now()) @updatedAt @db.Timestamp(6)
+  customers                  customers     @relation(fields: [customer_id], references: [customer_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_closure_request_customer")
+  accounts                   accounts      @relation(fields: [account_id], references: [account_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_closure_request_account")
+  reviewer                   users?        @relation("account_closure_requests_reviewed_byTousers", fields: [reviewed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_account_closure_request_reviewed_by")
+
+  @@index([customer_id], map: "idx_account_closure_request_customer")
+  @@index([account_id], map: "idx_account_closure_request_account")
+  @@index([customer_id, status], map: "idx_account_closure_request_customer_status")
+  @@index([status, created_at], map: "idx_account_closure_request_status_created")
+}
+
+model transfer_limit_requests {
+  transfer_limit_request_id       BigInt        @id @default(autoincrement())
+  customer_id                     BigInt
+  account_id                      BigInt
+  current_per_transaction_limit   Decimal?      @db.Decimal(19, 4)
+  requested_per_transaction_limit Decimal       @db.Decimal(19, 4)
+  current_daily_transfer_limit    Decimal?      @db.Decimal(19, 4)
+  requested_daily_transfer_limit  Decimal       @db.Decimal(19, 4)
+  reason                          String        @db.VarChar(500)
+  status                          RequestStatus @default(PENDING)
+  reviewed_by                     BigInt?
+  reviewed_at                     DateTime?     @db.Timestamp(6)
+  rejection_reason                String?       @db.VarChar(500)
+  created_at                      DateTime      @default(now()) @db.Timestamp(6)
+  updated_at                      DateTime      @default(now()) @updatedAt @db.Timestamp(6)
+  customers                       customers     @relation(fields: [customer_id], references: [customer_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_transfer_limit_request_customer")
+  accounts                        accounts      @relation(fields: [account_id], references: [account_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_transfer_limit_request_account")
+  reviewer                        users?        @relation("transfer_limit_requests_reviewed_byTousers", fields: [reviewed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_transfer_limit_request_reviewed_by")
+
+  @@index([customer_id], map: "idx_transfer_limit_request_customer")
+  @@index([account_id], map: "idx_transfer_limit_request_account")
+  @@index([customer_id, status], map: "idx_transfer_limit_request_customer_status")
+  @@index([status, created_at], map: "idx_transfer_limit_request_status_created")
+}
+
+model loan_requests {
+  loan_request_id           BigInt        @id @default(autoincrement())
+  customer_id               BigInt
+  requested_amount          Decimal       @db.Decimal(19, 4)
+  requested_duration_months Int
+  loan_type                 String        @db.VarChar(50)
+  loan_subtype              String?       @db.VarChar(50)
+  purpose                   String        @db.VarChar(500)
+  requested_interest_rate   Decimal?      @db.Decimal(8, 4)
+  status                    RequestStatus @default(PENDING)
+  reviewed_by               BigInt?
+  reviewed_at               DateTime?     @db.Timestamp(6)
+  approved_amount           Decimal?      @db.Decimal(19, 4)
+  approved_duration_months  Int?
+  approved_interest_rate    Decimal?      @db.Decimal(8, 4)
+  rejection_reason          String?       @db.VarChar(500)
+  admin_note                String?
+  created_at                DateTime      @default(now()) @db.Timestamp(6)
+  updated_at                DateTime      @default(now()) @updatedAt @db.Timestamp(6)
+  customers                 customers     @relation(fields: [customer_id], references: [customer_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_loan_request_customer")
+  reviewer                  users?        @relation("loan_requests_reviewed_byTousers", fields: [reviewed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_loan_request_reviewed_by")
+  loans                     loans?
+
+  @@index([customer_id], map: "idx_loan_request_customer")
+  @@index([customer_id, status], map: "idx_loan_request_customer_status")
+  @@index([status, created_at], map: "idx_loan_request_status_created")
+}
+
+model card_requests {
+  card_request_id  BigInt        @id @default(autoincrement())
+  customer_id      BigInt
+  account_id       BigInt
+  card_type        String        @db.VarChar(30)
+  card_variant     String?       @db.VarChar(50)
+  notes            String?       @db.VarChar(500)
+  status           RequestStatus @default(PENDING)
+  reviewed_by      BigInt?
+  reviewed_at      DateTime?     @db.Timestamp(6)
+  rejection_reason String?       @db.VarChar(500)
+  approved_card_id BigInt?       @unique
+  created_at       DateTime      @default(now()) @db.Timestamp(6)
+  updated_at       DateTime      @default(now()) @updatedAt @db.Timestamp(6)
+  customers        customers     @relation(fields: [customer_id], references: [customer_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_card_request_customer")
+  accounts         accounts      @relation(fields: [account_id], references: [account_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_card_request_account")
+  reviewer         users?        @relation("card_requests_reviewed_byTousers", fields: [reviewed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_card_request_reviewed_by")
+  approved_card    cards?        @relation(fields: [approved_card_id], references: [card_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_card_request_approved_card")
+
+  @@index([customer_id, status], map: "idx_card_request_customer_status")
+  @@index([account_id, status], map: "idx_card_request_account_status")
+  @@index([status, created_at], map: "idx_card_request_status_created")
+}
+
+model loans {
+  loan_id                     BigInt               @id @default(autoincrement())
+  customer_id                 BigInt
+  account_id                  BigInt               @unique
+  loan_request_id             BigInt               @unique
+  principal_amount            Decimal              @db.Decimal(19, 4)
+  outstanding_principal       Decimal              @db.Decimal(19, 4)
+  interest_rate               Decimal              @db.Decimal(8, 4)
+  duration_months             Int
+  emi_amount                  Decimal              @db.Decimal(19, 4)
+  loan_type                   String               @db.VarChar(50)
+  loan_subtype                String?              @db.VarChar(50)
+  status                      LoanStatus           @default(APPROVED)
+  approved_at                 DateTime?            @db.Timestamp(6)
+  approved_by                 BigInt?
+  disbursed_at                DateTime?            @db.Timestamp(6)
+  disbursed_by                BigInt?
+  disbursement_transaction_id BigInt?              @unique
+  auto_debit_enabled          Boolean              @default(false)
+  auto_debit_account_id       BigInt?
+  closed_at                   DateTime?            @db.Timestamp(6)
+  created_at                  DateTime             @default(now()) @db.Timestamp(6)
+  updated_at                  DateTime             @default(now()) @updatedAt @db.Timestamp(6)
+  customers                   customers            @relation(fields: [customer_id], references: [customer_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_loan_customer")
+  accounts                    accounts             @relation(fields: [account_id], references: [account_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_loan_account")
+  auto_debit_account          accounts?            @relation("loans_auto_debit_account", fields: [auto_debit_account_id], references: [account_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_loan_auto_debit_account")
+  disbursement_transaction    transactions?        @relation("loan_disbursement_transaction", fields: [disbursement_transaction_id], references: [transaction_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_loan_disbursement_transaction")
+  loan_requests               loan_requests        @relation(fields: [loan_request_id], references: [loan_request_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_loan_request")
+  approver                    users?               @relation("loans_approved_byTousers", fields: [approved_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_loan_approved_by")
+  disburser                   users?               @relation("loans_disbursed_byTousers", fields: [disbursed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_loan_disbursed_by")
+  emi_schedules               loan_emi_schedules[]
+
+  @@index([customer_id], map: "idx_loan_customer")
+  @@index([status], map: "idx_loan_status")
+  @@index([auto_debit_account_id], map: "idx_loan_auto_debit_account")
+}
+
+model loan_emi_schedules {
+  emi_schedule_id     BigInt        @id @default(autoincrement())
+  loan_id             BigInt
+  installment_number  Int
+  due_date            DateTime      @db.Date
+  principal_component Decimal       @db.Decimal(19, 4)
+  interest_component  Decimal       @db.Decimal(19, 4)
+  total_emi           Decimal       @db.Decimal(19, 4)
+  amount_paid         Decimal       @default(0) @db.Decimal(19, 4)
+  late_fee            Decimal       @default(0) @db.Decimal(19, 4)
+  status              EmiStatus     @default(PENDING)
+  paid_at             DateTime?     @db.Timestamp(6)
+  transaction_id      BigInt?
+  created_at          DateTime      @default(now()) @db.Timestamp(6)
+  updated_at          DateTime      @default(now()) @updatedAt @db.Timestamp(6)
+  loans               loans         @relation(fields: [loan_id], references: [loan_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_emi_schedule_loan")
+  transactions        transactions? @relation(fields: [transaction_id], references: [transaction_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_emi_schedule_transaction")
+
+  @@unique([loan_id, installment_number], map: "uq_emi_schedule_installment")
+  @@index([loan_id], map: "idx_emi_schedule_loan")
+  @@index([due_date, status], map: "idx_emi_schedule_due_status")
+}
+
+model request_status_history {
+  request_status_history_id BigInt         @id @default(autoincrement())
+  request_type              RequestType
+  request_id                BigInt
+  previous_status           RequestStatus?
+  new_status                RequestStatus
+  changed_by                BigInt?
+  reason                    String?        @db.VarChar(500)
+  created_at                DateTime       @default(now()) @db.Timestamp(6)
+  users                     users?         @relation("request_status_history_changed_byTousers", fields: [changed_by], references: [user_id], onDelete: NoAction, onUpdate: NoAction, map: "fk_request_status_history_changed_by")
+
+  @@index([request_type, request_id, created_at], map: "idx_request_status_history_request")
+  @@index([new_status, created_at], map: "idx_request_status_history_status")
+}

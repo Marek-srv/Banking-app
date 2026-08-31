@@ -1,0 +1,7 @@
+import { Router } from "express";
+import { authenticate, authorizeRoles } from "../../middleware/auth.middleware";
+import { transactionRateLimiter } from "../../middleware/rate-limit.middleware";
+import { cancelLoanRequestController, configureAutoDebitController, createLoanRequestController, foreclosureQuoteController, forecloseLoanController, getLoanController, listEmisController, listLoanRequestsController, listLoansController, payEmiController, prepayLoanController, previewLoanController } from "./loan.controller";
+
+export const loanRequestRouter = Router(); loanRequestRouter.use(authenticate, authorizeRoles("CUSTOMER")); loanRequestRouter.get("/preview", previewLoanController); loanRequestRouter.post("/", createLoanRequestController); loanRequestRouter.get("/", listLoanRequestsController); loanRequestRouter.post("/:requestId/cancel", cancelLoanRequestController);
+export const loanRouter = Router(); loanRouter.use(authenticate, authorizeRoles("CUSTOMER")); loanRouter.get("/", listLoansController); loanRouter.get("/:loanId/foreclosure-quote", foreclosureQuoteController); loanRouter.get("/:loanId/emis", listEmisController); loanRouter.get("/:loanId", getLoanController); loanRouter.post("/:loanId/emis/:emiId/pay", transactionRateLimiter, payEmiController); loanRouter.post("/:loanId/prepay", transactionRateLimiter, prepayLoanController); loanRouter.post("/:loanId/foreclose", transactionRateLimiter, forecloseLoanController); loanRouter.patch("/:loanId/auto-debit", configureAutoDebitController);

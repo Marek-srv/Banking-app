@@ -1,0 +1,251 @@
+CREATE TABLE users (
+    user_id BIGSERIAL PRIMARY KEY,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(30) NOT NULL DEFAULT 'CUSTOMER',
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    last_login_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE branches (
+    branch_id BIGSERIAL PRIMARY KEY,
+    branch_code VARCHAR(20) UNIQUE NOT NULL,
+    branch_name VARCHAR(150) NOT NULL,
+    address VARCHAR(255),
+    city VARCHAR(100),
+    state VARCHAR(100),
+    country VARCHAR(100) DEFAULT 'India',
+    postal_code VARCHAR(20),
+    phone VARCHAR(20),
+    email VARCHAR(255) UNIQUE,
+    operating_hours VARCHAR(100),
+    manager_id BIGINT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE customers (
+    customer_id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT UNIQUE NOT NULL,
+    branch_id BIGINT NOT NULL,
+    customer_number VARCHAR(30) UNIQUE NOT NULL,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    date_of_birth DATE,
+    gender VARCHAR(20),
+    phone VARCHAR(20),
+    email VARCHAR(255) UNIQUE,
+    address VARCHAR(255),
+    city VARCHAR(100),
+    state VARCHAR(100),
+    country VARCHAR(100) DEFAULT 'India',
+    postal_code VARCHAR(20),
+    kyc_status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
+    customer_status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_customer_user
+        FOREIGN KEY (user_id) REFERENCES users(user_id),
+
+    CONSTRAINT fk_customer_branch
+        FOREIGN KEY (branch_id) REFERENCES branches(branch_id)
+);
+
+CREATE TABLE employees (
+    employee_id BIGSERIAL PRIMARY KEY,
+    branch_id BIGINT NOT NULL,
+    employee_number VARCHAR(30) UNIQUE NOT NULL,
+    first_name VARCHAR(100) NOT NULL,
+    last_name VARCHAR(100) NOT NULL,
+    position VARCHAR(100),
+    phone VARCHAR(20),
+    email VARCHAR(255) UNIQUE,
+    gender VARCHAR(20),
+    hire_date DATE,
+    qualification VARCHAR(150),
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_employee_branch
+        FOREIGN KEY (branch_id) REFERENCES branches(branch_id)
+);
+
+ALTER TABLE branches
+ADD CONSTRAINT fk_branch_manager
+FOREIGN KEY (manager_id)
+REFERENCES employees(employee_id);
+
+CREATE TABLE accounts (
+    account_id BIGSERIAL PRIMARY KEY,
+    account_number VARCHAR(20) UNIQUE NOT NULL,
+    customer_id BIGINT NOT NULL,
+    branch_id BIGINT NOT NULL,
+    account_type VARCHAR(30) NOT NULL,
+    currency CHAR(3) NOT NULL DEFAULT 'INR',
+    current_balance DECIMAL(19,4) NOT NULL DEFAULT 0,
+    available_balance DECIMAL(19,4) NOT NULL DEFAULT 0,
+    account_status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    opened_at DATE NOT NULL,
+    closed_at DATE,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_account_customer
+        FOREIGN KEY (customer_id) REFERENCES customers(customer_id),
+
+    CONSTRAINT fk_account_branch
+        FOREIGN KEY (branch_id) REFERENCES branches(branch_id),
+
+    CONSTRAINT chk_current_balance
+        CHECK (current_balance >= 0),
+
+    CONSTRAINT chk_available_balance
+        CHECK (available_balance >= 0)
+);
+
+CREATE TABLE cards (
+    card_id BIGSERIAL PRIMARY KEY,
+    account_id BIGINT NOT NULL,
+    card_reference VARCHAR(50) UNIQUE NOT NULL,
+    masked_card_number VARCHAR(25),
+    card_type VARCHAR(30) NOT NULL,
+    expiry_date DATE,
+    card_status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_card_account
+        FOREIGN KEY (account_id) REFERENCES accounts(account_id)
+);
+
+CREATE TABLE beneficiaries (
+    beneficiary_id BIGSERIAL PRIMARY KEY,
+    customer_id BIGINT NOT NULL,
+    beneficiary_name VARCHAR(150) NOT NULL,
+    beneficiary_account_no VARCHAR(20) NOT NULL,
+    bank_name VARCHAR(150),
+    bank_code VARCHAR(30),
+    nickname VARCHAR(100),
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_beneficiary_customer
+        FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+);
+
+CREATE TABLE transactions (
+    transaction_id BIGSERIAL PRIMARY KEY,
+    reference_number VARCHAR(50) UNIQUE NOT NULL,
+    transaction_type VARCHAR(30) NOT NULL,
+    source_account_id BIGINT,
+    destination_account_id BIGINT,
+    amount DECIMAL(19,4) NOT NULL,
+    currency CHAR(3) NOT NULL DEFAULT 'INR',
+    status VARCHAR(30) NOT NULL DEFAULT 'INITIATED',
+    initiated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_transaction_source
+        FOREIGN KEY (source_account_id) REFERENCES accounts(account_id),
+
+    CONSTRAINT fk_transaction_destination
+        FOREIGN KEY (destination_account_id) REFERENCES accounts(account_id),
+
+    CONSTRAINT chk_transaction_amount
+        CHECK (amount > 0),
+
+    CONSTRAINT chk_different_accounts
+        CHECK (
+            destination_account_id IS NULL
+            OR source_account_id <> destination_account_id
+        ),
+
+    CONSTRAINT chk_transfer_destination
+        CHECK (
+            transaction_type <> 'TRANSFER'
+            OR (
+                source_account_id IS NOT NULL
+                AND destination_account_id IS NOT NULL
+            )
+        ),
+
+    CONSTRAINT chk_completed_at
+        CHECK (
+            status <> 'COMPLETED'
+            OR completed_at IS NOT NULL
+        )
+);
+
+CREATE TABLE ledger_entries (
+    ledger_entry_id BIGSERIAL PRIMARY KEY,
+    transaction_id BIGINT NOT NULL,
+    account_id BIGINT NOT NULL,
+    entry_type VARCHAR(10) NOT NULL,
+    amount DECIMAL(19,4) NOT NULL,
+    balance_before DECIMAL(19,4) NOT NULL,
+    balance_after DECIMAL(19,4) NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_ledger_transaction
+        FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id),
+
+    CONSTRAINT fk_ledger_account
+        FOREIGN KEY (account_id) REFERENCES accounts(account_id),
+
+    CONSTRAINT chk_ledger_type
+        CHECK (entry_type IN ('DEBIT', 'CREDIT')),
+
+    CONSTRAINT chk_ledger_amount
+        CHECK (amount > 0),
+
+    CONSTRAINT chk_ledger_balance
+        CHECK (
+            (entry_type = 'DEBIT' AND balance_after = balance_before - amount)
+            OR
+            (entry_type = 'CREDIT' AND balance_after = balance_before + amount)
+        )
+);
+
+CREATE TABLE transaction_details (
+    transaction_detail_id BIGSERIAL PRIMARY KEY,
+    transaction_id BIGINT NOT NULL,
+    description VARCHAR(255),
+    merchant_payee VARCHAR(150),
+    transaction_category VARCHAR(100),
+    notes TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_transaction_detail
+        FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id)
+);
+
+CREATE TABLE transaction_status_history (
+    status_history_id BIGSERIAL PRIMARY KEY,
+    transaction_id BIGINT NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    description VARCHAR(255),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_transaction_status
+        FOREIGN KEY (transaction_id) REFERENCES transactions(transaction_id)
+);
+
+CREATE TABLE atms (
+    atm_id BIGSERIAL PRIMARY KEY,
+    branch_id BIGINT NOT NULL,
+    atm_code VARCHAR(30) UNIQUE NOT NULL,
+    location VARCHAR(255) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    operating_hours VARCHAR(100),
+    supported_transactions VARCHAR(255),
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_atm_branch
+        FOREIGN KEY (branch_id) REFERENCES branches(branch_id)
+);

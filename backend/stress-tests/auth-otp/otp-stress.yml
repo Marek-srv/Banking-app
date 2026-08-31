@@ -1,0 +1,88 @@
+config:
+  target: "http://localhost:3104"
+  processor: "./processor.cjs"
+  phases:
+    - duration: 5
+      arrivalRate: 1
+      name: "Warm-up: 5 users"
+    - pause: 2
+    - duration: 1
+      arrivalCount: 10
+      name: "10 concurrent users"
+    - pause: 2
+    - duration: 1
+      arrivalCount: 20
+      name: "20 concurrent users"
+
+before:
+  flow:
+    - function: "beforeTest"
+
+after:
+  flow:
+    - function: "afterTest"
+
+scenarios:
+  - name: "Complete email OTP lifecycle"
+    flow:
+      - function: "generateSyntheticUser"
+      - post:
+          url: "/api/v1/auth/register"
+          json:
+            firstName: "OTP"
+            lastName: "Stress"
+            dateOfBirth: "1990-01-01"
+            mobile: "9876543210"
+            email: "{{ email }}"
+          afterResponse: "expect201"
+      - function: "readInitialOtp"
+      - post:
+          url: "/api/v1/auth/verify-otp"
+          json:
+            email: "{{ email }}"
+            otp: "{{ wrongOtp }}"
+          afterResponse: "expect400"
+      - post:
+          url: "/api/v1/auth/resend-otp"
+          json:
+            email: "{{ email }}"
+          afterResponse: "expect200"
+      - function: "readResentOtp"
+      - post:
+          url: "/api/v1/auth/verify-otp"
+          json:
+            email: "{{ email }}"
+            otp: "{{ oldOtp }}"
+          afterResponse: "expect400"
+      - post:
+          url: "/api/v1/auth/verify-otp"
+          json:
+            email: "{{ email }}"
+            otp: "{{ newOtp }}"
+          afterResponse: "captureRegistrationToken"
+      - post:
+          url: "/api/v1/auth/verify-otp"
+          json:
+            email: "{{ email }}"
+            otp: "{{ newOtp }}"
+          afterResponse: "expect400"
+      - post:
+          url: "/api/v1/auth/complete-registration"
+          json:
+            registrationToken: "{{ registrationToken }}"
+            password: "{{ password }}"
+            confirmPassword: "{{ password }}"
+          afterResponse: "captureCustomerId"
+      - post:
+          url: "/api/v1/auth/complete-registration"
+          json:
+            registrationToken: "{{ registrationToken }}"
+            password: "{{ password }}"
+            confirmPassword: "{{ password }}"
+          afterResponse: "expect409"
+      - post:
+          url: "/api/v1/auth/login"
+          json:
+            customerId: "{{ customerId }}"
+            password: "{{ password }}"
+          afterResponse: "expect200"

@@ -1,0 +1,78 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-bank-border;
+  }
+
+  html {
+    font-family: Inter, system-ui, sans-serif;
+    color: #172033;
+    background: #f6f8fb;
+  }
+
+  body {
+    margin: 0;
+    min-width: 320px;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+}
+
+@media (min-width: 1024px) and (max-height: 800px) {
+  .shadow-card {
+    box-shadow: 0 12px 38px rgba(11, 31, 58, 0.1);
+  }
+
+  .login-card {
+    padding-top: 1.2rem;
+    padding-bottom: 1.2rem;
+  }
+
+  .login-card-form {
+    margin-top: 1.1rem;
+  }
+
+  .login-card-form > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 0.85rem;
+  }
+
+  .login-card input,
+  .login-card-form button[type="submit"] {
+    height: 2.7rem;
+  }
+
+  .login-card-links {
+    margin-top: 0.7rem;
+  }
+
+  .login-card-divider {
+    margin-top: 0.85rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .login-card-secure {
+    margin-top: 1rem;
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}
