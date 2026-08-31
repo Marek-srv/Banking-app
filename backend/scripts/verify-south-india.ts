@@ -5,7 +5,13 @@ import app from "../src/app";
 import { pool } from "../src/config/db";
 import { prisma } from "../src/config/prisma";
 
-const branchCodes = ["PIBLR001", "PIMAA001", "PIHYD001", "PICOK001", "PICJB001"];
+const branchCodes = [
+  "PIBK0000001",
+  "PIBK0000002",
+  "PIBK0000003",
+  "PIBK0000004",
+  "PIBK0000005",
+];
 const emailSuffix = "@seed.pi-bank.test";
 
 async function scalarCount(query: string, parameters: unknown[] = []): Promise<number> {
@@ -14,12 +20,38 @@ async function scalarCount(query: string, parameters: unknown[] = []): Promise<n
 }
 
 async function main() {
-  const seedUsers = await prisma.users.findMany({
+  const seededUserCount = await prisma.users.count({
     where: { email: { endsWith: emailSuffix } },
+  });
+  const seededAdminCount = await prisma.users.count({
+    where: { email: { endsWith: emailSuffix }, role: "ADMIN" },
+  });
+  assert.equal(seededUserCount, 11, "Expected 10 customer users and 1 admin user");
+  assert.equal(seededAdminCount, 1, "Expected exactly 1 seeded admin user");
+
+  const seedUsers = await prisma.users.findMany({
+    where: { email: { endsWith: emailSuffix }, role: "CUSTOMER" },
     include: { customers: true },
     orderBy: { email: "asc" },
   });
-  assert.equal(seedUsers.length, 20, "Expected 20 seeded users");
+  assert.equal(seedUsers.length, 10, "Expected 10 seeded customer users");
+
+  const adminUser = await prisma.users.findUnique({
+    where: { email: "admin@seed.pi-bank.test" },
+    include: { customers: true },
+  });
+  assert.ok(adminUser, "Expected one seeded admin user");
+  assert.equal(adminUser.role, "ADMIN");
+  assert.equal(adminUser.status, "ACTIVE");
+  assert.equal(adminUser.email_verified, true);
+  assert.ok(adminUser.email_verified_at);
+  assert.ok(adminUser.customers);
+  assert.equal(adminUser.customers.customer_number, "ADMINLOCAL0001");
+  assert.equal(
+    await bcrypt.compare("PiBank@LocalAdmin26", adminUser.password_hash),
+    true,
+    "Admin password mismatch"
+  );
 
   for (const user of seedUsers) {
     assert.equal(user.status, "ACTIVE");
@@ -36,23 +68,37 @@ async function main() {
     const password = `PiBank@Test${String(credentialIndex).padStart(3, "0")}`;
     assert.equal(await bcrypt.compare(password, user.password_hash), true, `Password mismatch for ${user.customers.customer_number}`);
   }
+  assert.deepEqual(
+    seedUsers.map((user) => user.customers!.customer_number).sort(),
+    Array.from({ length: 10 }, (_, index) => `CUSTSOUTH${String(index + 1).padStart(4, "0")}`)
+  );
 
   const customerIds = seedUsers.map((user) => user.customers!.customer_id);
   const seedAccounts = await prisma.accounts.findMany({
     where: { customer_id: { in: customerIds } },
     orderBy: { account_id: "asc" },
   });
-  assert.equal(seedAccounts.length, 39);
+  const depositAccounts = seedAccounts.filter(
+    (account) => account.account_type === "SAVINGS" || account.account_type === "CURRENT"
+  );
+  const loanAccounts = seedAccounts.filter((account) => account.account_type === "LOAN");
+  assert.equal(seedAccounts.length, 21);
+  assert.equal(depositAccounts.length, 15);
+  assert.equal(loanAccounts.length, 6);
   for (const customerId of customerIds) {
-    const count = seedAccounts.filter((account) => account.customer_id === customerId).length;
-    assert.ok(count >= 1 && count <= 3, `Invalid account count for customer ${customerId.toString()}`);
+    const count = depositAccounts.filter((account) => account.customer_id === customerId).length;
+    assert.ok(count >= 1 && count <= 2, `Invalid deposit account count for customer ${customerId.toString()}`);
   }
-  for (const account of seedAccounts) {
+  for (const account of depositAccounts) {
     assert.ok(account.current_balance.greaterThanOrEqualTo(10_000));
     assert.ok(account.current_balance.lessThanOrEqualTo(500_000));
     assert.equal(account.current_balance.equals(account.available_balance), true);
     assert.equal(account.currency, "INR");
     assert.ok(account.account_type === "SAVINGS" || account.account_type === "CURRENT");
+  }
+  for (const account of loanAccounts) {
+    assert.equal(account.available_balance.equals(0), true);
+    assert.equal(account.currency, "INR");
   }
 
   const transactionCount = await scalarCount("SELECT COUNT(*)::int AS count FROM transactions WHERE reference_number LIKE 'SEED-%'");
@@ -63,9 +109,9 @@ async function main() {
   const branchIds = branchRows.map((branch) => branch.branch_id);
   const employeeCount = await prisma.employees.count({ where: { branch_id: { in: branchIds } } });
   const atmCount = await prisma.atms.count({ where: { branch_id: { in: branchIds } } });
-  assert.equal(transactionCount, 219);
-  assert.equal(beneficiaryCount, 40);
-  assert.equal(cardCount, 44);
+  assert.equal(transactionCount, 105);
+  assert.equal(beneficiaryCount, 20);
+  assert.equal(cardCount, 12);
   assert.equal(branchCount, 5);
   assert.equal(employeeCount, 25);
   assert.equal(atmCount, 10);
@@ -130,7 +176,7 @@ async function main() {
   assert.equal(invalidCustomerTransactionCounts, 0);
 
   const apiChecks = [];
-  for (const credentialIndex of [1, 10, 20]) {
+  for (const credentialIndex of [1, 5, 10]) {
     const customerId = `CUSTSOUTH${String(credentialIndex).padStart(4, "0")}`;
     const password = `PiBank@Test${String(credentialIndex).padStart(3, "0")}`;
     const loginResponse = await request(app).post("/api/v1/auth/login").send({ customerId, password });
@@ -145,13 +191,29 @@ async function main() {
     const accountsResponse = await request(app).get("/api/v1/accounts").set("Authorization", `Bearer ${token}`);
     assert.equal(accountsResponse.status, 200);
     assert.ok(Array.isArray(accountsResponse.body.data));
-    assert.ok(accountsResponse.body.data.length >= 1 && accountsResponse.body.data.length <= 3);
+    assert.ok(accountsResponse.body.data.length >= 1 && accountsResponse.body.data.length <= 2);
     apiChecks.push({ customerId, login: 200, customer: 200, accounts: 200 });
   }
 
+  const adminLogin = await request(app).post("/api/v1/auth/login").send({
+    customerId: "ADMINLOCAL0001",
+    password: "PiBank@LocalAdmin26",
+  });
+  assert.equal(adminLogin.status, 200, "Admin login failed");
+  assert.equal(adminLogin.body.data?.user?.role, "ADMIN");
+  assert.equal(typeof adminLogin.body.data?.token, "string");
+
+  const adminDashboard = await request(app)
+    .get("/api/v1/admin/dashboard")
+    .set("Authorization", `Bearer ${adminLogin.body.data.token}`);
+  assert.equal(adminDashboard.status, 200, "Admin dashboard access failed");
+
   console.log(JSON.stringify({
     customers: seedUsers.length,
+    adminUsers: 1,
     accounts: seedAccounts.length,
+    depositAccounts: depositAccounts.length,
+    loanAccounts: loanAccounts.length,
     transactions: transactionCount,
     beneficiaries: beneficiaryCount,
     cards: cardCount,
@@ -159,6 +221,7 @@ async function main() {
     employees: employeeCount,
     atms: atmCount,
     credentialsValidated: seedUsers.length,
+    adminValidated: true,
     integrity: {
       invalidLedgerRows,
       completedWithoutTimestamp,
