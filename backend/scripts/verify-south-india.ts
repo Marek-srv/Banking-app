@@ -353,7 +353,11 @@ async function main() {
     const accountsResponse = await request(app).get("/api/v1/accounts").set("Authorization", `Bearer ${token}`);
     assert.equal(accountsResponse.status, 200);
     assert.ok(Array.isArray(accountsResponse.body.data));
-    const expectedAccountCount = [2, 4, 7, 8, 10].includes(credentialIndex) ? 2 : 1;
+    const customer = seedUsers.find((user) => user.customers?.customer_number === customerId)?.customers;
+    assert.ok(customer, `Missing seeded customer ${customerId}`);
+    const expectedAccountCount = seedAccounts.filter(
+      (account) => account.customer_id === customer.customer_id
+    ).length;
     assert.equal(accountsResponse.body.data.length, expectedAccountCount);
     apiChecks.push({ customerId, login: 200, customer: 200, accounts: 200 });
   }
