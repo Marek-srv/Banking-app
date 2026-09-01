@@ -85,9 +85,12 @@ async function main() {
   assert.equal(seedAccounts.length, 21);
   assert.equal(depositAccounts.length, 15);
   assert.equal(loanAccounts.length, 6);
-  for (const customerId of customerIds) {
-    const count = depositAccounts.filter((account) => account.customer_id === customerId).length;
-    assert.ok(count >= 1 && count <= 2, `Invalid deposit account count for customer ${customerId.toString()}`);
+  for (const user of seedUsers) {
+    const customer = user.customers!;
+    const credentialIndex = Number(customer.customer_number.slice(-4));
+    const expectedCount = [2, 4, 7, 8, 10].includes(credentialIndex) ? 2 : 1;
+    const count = depositAccounts.filter((account) => account.customer_id === customer.customer_id).length;
+    assert.equal(count, expectedCount, `Invalid deposit account count for ${customer.customer_number}`);
   }
   for (const account of depositAccounts) {
     assert.ok(account.current_balance.greaterThanOrEqualTo(10_000));
@@ -102,17 +105,74 @@ async function main() {
   }
 
   const transactionCount = await scalarCount("SELECT COUNT(*)::int AS count FROM transactions WHERE reference_number LIKE 'SEED-%'");
+  const totalTransactionCount = await prisma.transactions.count({
+    where: {
+      OR: [
+        { source_account_id: { in: seedAccounts.map((account) => account.account_id) } },
+        { destination_account_id: { in: seedAccounts.map((account) => account.account_id) } },
+      ],
+    },
+  });
   const beneficiaryCount = await prisma.beneficiaries.count({ where: { customer_id: { in: customerIds } } });
   const cardCount = await prisma.cards.count({ where: { account_id: { in: seedAccounts.map((account) => account.account_id) } } });
+  const activeCardCount = await prisma.cards.count({
+    where: {
+      account_id: { in: seedAccounts.map((account) => account.account_id) },
+      card_status: "ACTIVE",
+    },
+  });
+  const loanCount = await prisma.loans.count({ where: { customer_id: { in: customerIds } } });
+  const activeLoanCount = await prisma.loans.count({ where: { customer_id: { in: customerIds }, status: "ACTIVE" } });
+  const overdueLoanCount = await prisma.loans.count({ where: { customer_id: { in: customerIds }, status: "OVERDUE" } });
+  const foreclosedLoanCount = await prisma.loans.count({ where: { customer_id: { in: customerIds }, status: "FORECLOSED" } });
+  const emiCount = await prisma.loan_emi_schedules.count({ where: { loans: { customer_id: { in: customerIds } } } });
+  const pendingEmiCount = await prisma.loan_emi_schedules.count({ where: { loans: { customer_id: { in: customerIds } }, status: "PENDING" } });
+  const paidEmiCount = await prisma.loan_emi_schedules.count({ where: { loans: { customer_id: { in: customerIds } }, status: "PAID" } });
+  const overdueEmiCount = await prisma.loan_emi_schedules.count({ where: { loans: { customer_id: { in: customerIds } }, status: "OVERDUE" } });
+  const cancelledEmiCount = await prisma.loan_emi_schedules.count({ where: { loans: { customer_id: { in: customerIds } }, status: "CANCELLED" } });
+  const loanRequestCount = await prisma.loan_requests.count({ where: { customer_id: { in: customerIds } } });
+  const approvedLoanRequestCount = await prisma.loan_requests.count({ where: { customer_id: { in: customerIds }, status: "APPROVED" } });
+  const pendingLoanRequestCount = await prisma.loan_requests.count({ where: { customer_id: { in: customerIds }, status: "PENDING" } });
+  const cardRequestCount = await prisma.card_requests.count({ where: { customer_id: { in: customerIds } } });
+  const approvedCardRequestCount = await prisma.card_requests.count({ where: { customer_id: { in: customerIds }, status: "APPROVED" } });
+  const pendingCardRequestCount = await prisma.card_requests.count({ where: { customer_id: { in: customerIds }, status: "PENDING" } });
+  const rejectedCardRequestCount = await prisma.card_requests.count({ where: { customer_id: { in: customerIds }, status: "REJECTED" } });
+  const accountRequestCount = await prisma.account_requests.count({ where: { customer_id: { in: customerIds } } });
+  const approvedAccountRequestCount = await prisma.account_requests.count({ where: { customer_id: { in: customerIds }, status: "APPROVED" } });
+  const pendingAccountRequestCount = await prisma.account_requests.count({ where: { customer_id: { in: customerIds }, status: "PENDING" } });
+  const rejectedAccountRequestCount = await prisma.account_requests.count({ where: { customer_id: { in: customerIds }, status: "REJECTED" } });
   const branchCount = await prisma.branches.count({ where: { branch_code: { in: branchCodes } } });
-  const branchRows = await prisma.branches.findMany({ where: { branch_code: { in: branchCodes } }, select: { branch_id: true, manager_id: true } });
+  const branchRows = await prisma.branches.findMany({ where: { branch_code: { in: branchCodes } }, select: { branch_id: true, branch_code: true, manager_id: true } });
   const branchIds = branchRows.map((branch) => branch.branch_id);
   const employeeCount = await prisma.employees.count({ where: { branch_id: { in: branchIds } } });
   const atmCount = await prisma.atms.count({ where: { branch_id: { in: branchIds } } });
   assert.equal(transactionCount, 105);
+  assert.equal(totalTransactionCount, 117);
   assert.equal(beneficiaryCount, 20);
   assert.equal(cardCount, 12);
+  assert.equal(activeCardCount, 12);
+  assert.equal(loanCount, 6);
+  assert.equal(activeLoanCount, 3);
+  assert.equal(overdueLoanCount, 1);
+  assert.equal(foreclosedLoanCount, 2);
+  assert.equal(emiCount, 240);
+  assert.equal(pendingEmiCount, 163);
+  assert.equal(paidEmiCount, 4);
+  assert.equal(overdueEmiCount, 1);
+  assert.equal(cancelledEmiCount, 72);
+  assert.equal(loanRequestCount, 7);
+  assert.equal(approvedLoanRequestCount, 6);
+  assert.equal(pendingLoanRequestCount, 1);
+  assert.equal(cardRequestCount, 14);
+  assert.equal(approvedCardRequestCount, 12);
+  assert.equal(pendingCardRequestCount, 1);
+  assert.equal(rejectedCardRequestCount, 1);
+  assert.equal(accountRequestCount, 3);
+  assert.equal(approvedAccountRequestCount, 1);
+  assert.equal(pendingAccountRequestCount, 1);
+  assert.equal(rejectedAccountRequestCount, 1);
   assert.equal(branchCount, 5);
+  assert.deepEqual(branchRows.map((branch) => branch.branch_code).sort(), [...branchCodes].sort());
   assert.equal(employeeCount, 25);
   assert.equal(atmCount, 10);
   assert.equal(branchRows.every((branch) => branch.manager_id !== null), true);
@@ -121,13 +181,19 @@ async function main() {
     `SELECT COUNT(*)::int AS count
      FROM ledger_entries le
      JOIN transactions t ON t.transaction_id = le.transaction_id
-     WHERE t.reference_number LIKE 'SEED-%'
+     WHERE le.account_id = ANY($1::bigint[])
        AND (le.amount <= 0 OR le.entry_type NOT IN ('DEBIT', 'CREDIT')
          OR (le.entry_type = 'DEBIT' AND le.balance_after <> le.balance_before - le.amount)
          OR (le.entry_type = 'CREDIT' AND le.balance_after <> le.balance_before + le.amount))`
+    , [seedAccounts.map((account) => account.account_id.toString())]
   );
   const completedWithoutTimestamp = await scalarCount(
-    "SELECT COUNT(*)::int AS count FROM transactions WHERE reference_number LIKE 'SEED-%' AND status = 'COMPLETED' AND completed_at IS NULL"
+    `SELECT COUNT(*)::int AS count
+     FROM transactions
+     WHERE (source_account_id = ANY($1::bigint[]) OR destination_account_id = ANY($1::bigint[]))
+       AND status = 'COMPLETED'
+       AND completed_at IS NULL`,
+    [seedAccounts.map((account) => account.account_id.toString())]
   );
   const unbalancedTransfers = await scalarCount(
     `SELECT COUNT(*)::int AS count FROM (
@@ -191,7 +257,8 @@ async function main() {
     const accountsResponse = await request(app).get("/api/v1/accounts").set("Authorization", `Bearer ${token}`);
     assert.equal(accountsResponse.status, 200);
     assert.ok(Array.isArray(accountsResponse.body.data));
-    assert.ok(accountsResponse.body.data.length >= 1 && accountsResponse.body.data.length <= 2);
+    const expectedAccountCount = [2, 4, 7, 8, 10].includes(credentialIndex) ? 2 : 1;
+    assert.equal(accountsResponse.body.data.length, expectedAccountCount);
     apiChecks.push({ customerId, login: 200, customer: 200, accounts: 200 });
   }
 
@@ -215,8 +282,14 @@ async function main() {
     depositAccounts: depositAccounts.length,
     loanAccounts: loanAccounts.length,
     transactions: transactionCount,
+    totalTransactions: totalTransactionCount,
     beneficiaries: beneficiaryCount,
     cards: cardCount,
+    loans: loanCount,
+    emis: emiCount,
+    loanRequests: loanRequestCount,
+    cardRequests: cardRequestCount,
+    accountRequests: accountRequestCount,
     branches: branchCount,
     employees: employeeCount,
     atms: atmCount,
