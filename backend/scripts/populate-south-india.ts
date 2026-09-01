@@ -506,10 +506,14 @@ async function main() {
   }
 
   const loginDirectory = resolve(process.cwd(), "../frontend/people/login");
-  await mkdir(loginDirectory, { recursive: true });
+  try {
+    await mkdir(loginDirectory, { recursive: true });
   const credentialLines = ["========================================", "π BANK LOCAL TEST LOGINS", "========================================", "", "ADMIN", "", "Admin ID/Username:", "ADMINLOCAL0001", "Password:", result.adminPassword, "", "----------------------------------------", ""];
   customers.forEach(([firstName, lastName], index) => credentialLines.push(`CUSTOMER ${index + 1}`, "", `Name: ${firstName} ${lastName}`, `Customer ID: CUSTSOUTH${String(index + 1).padStart(4, "0")}`, `Email: ${emailFor(index)}`, `Password: ${passwordFor(index)}`, "", "----------------------------------------", ""));
-  await writeFile(resolve(loginDirectory, "generated_logins.txt"), `${credentialLines.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
+    await writeFile(resolve(loginDirectory, "generated_logins.txt"), `${credentialLines.join("\n")}\n`, { encoding: "utf8", mode: 0o600 });
+  } catch {
+    console.warn("Optional local credentials file could not be written; seeded database data is unchanged.");
+  }
 
   console.log(JSON.stringify({ customers: result.customers, depositAccounts: result.accounts.length, baseTransactions: result.transactions, beneficiaries: result.beneficiaries, branches: result.branches, employees: result.employees, atms: result.atms, loans: loanPlans.length, approvedCards: 12 }, null, 2));
 }
